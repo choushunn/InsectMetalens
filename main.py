@@ -122,6 +122,11 @@ class InsectMetalens:
             return self.phases
 
     def asm(self, phases):
+        """
+        角谱衍射/菲涅尔近场衍射
+        :param phases:
+        :return:
+        """
         pass
 
 
