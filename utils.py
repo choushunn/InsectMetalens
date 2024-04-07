@@ -8,6 +8,12 @@ import matplotlib.pyplot as plt
 
 
 def show_contour(data, title):
+    """
+    绘制等值线图
+    :param data:
+    :param title:
+    :return:
+    """
     plt.contourf(data)
     plt.colorbar()
     plt.title(title)
@@ -15,12 +21,24 @@ def show_contour(data, title):
 
 
 def show_image(data, title):
+    """
+    绘制图像
+    :param data:
+    :param title:
+    :return:
+    """
     plt.imshow(data)
     plt.title(title)
     plt.show()
 
 
 def show_group_delay(radius_array, group_delay):
+    """
+    绘制群延时随半径变化的图像
+    :param radius_array:
+    :param group_delay:
+    :return:
+    """
     plt.plot(radius_array, group_delay)
     plt.xlabel('Radius (um)')
     plt.ylabel('Group Delay (fs)')
@@ -30,6 +48,13 @@ def show_group_delay(radius_array, group_delay):
 
 
 def show_phases(radius_array, phases, lambda_list):
+    """
+    绘制相位随半径变化的图像
+    :param radius_array:
+    :param phases:
+    :param lambda_list:
+    :return:
+    """
     for i, wavelength in enumerate(lambda_list):
         plt.plot(radius_array, phases[:, i], label=f'lambda = {wavelength}')
     plt.xlabel('Radius (um)')

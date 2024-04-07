@@ -5,19 +5,16 @@
 # @Time       : 2024/4/2 15:38
 # @Description:
 
-from main import InsectMetalens
+from main import MetalensOptimization
 
 
 class SGD:
     def __init__(self):
-        self.im = InsectMetalens()
+        self.im = MetalensOptimization()
         self.phases = self.im.init_phases()
 
 
 if __name__ == '__main__':
     sgd = SGD()
     print(sgd.im.phases)
-    sgd.im.plot_phases()
-
-
-
+    # sgd.im.plot_phases()

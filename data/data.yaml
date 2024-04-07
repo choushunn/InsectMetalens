@@ -1,17 +1,11 @@
+# This is the default data.yaml file.
 parameters:
-  speed_of_light: 0.3  # 光速，单位为m/s
-  wavelength_center: 10.6  # 中心波长，单位为微米
-  focal_length: 1366.8  # 焦距，根据中心波长计算
-  outer_radius: 500.25  # 外径
+  speed_of_light: 0.3
+  wavelength_center: 10.6
+  outer_radius: 500.25
+  sample_interval: 7.25
+  N_sampling: 2048
+  lambda_list: [ 8, 9.3, 10.6, 11.3, 12 ]
 
-sampling:
-  sample_interval: 7.25  # 采样间隔，环带间隔
-  N_sampling: 2048  # 采样点个数
-  lambda_list: [ 8, 9.3, 10.6, 11.3, 12 ]  # 波长列表
-
-calculations:
-  num_rings: 70  # 计算环带数量Nr_outter
-  R_0: 500.25  # 初始半径，根据外径和采样间隔计算
-  Dx: 0.48828125  # 每个环带的采样间隔，根据外径和采样点个数计算
 
 
