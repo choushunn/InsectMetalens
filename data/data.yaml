@@ -7,5 +7,11 @@ parameters:
   N_sampling: 2048
   lambda_list: [ 8, 9.3, 10.6, 11.3, 12 ]
 
-
+target_parameters:
+  TargetFWHM: 1.5
+  TargetSideLobeRatio: 0.05
+  TargetPeakIntensity: 2000
+  TargetFocalOffset: 0.00001
+  TargetDOF: 0.0
+  TargetIntensitySum: 0.0
 

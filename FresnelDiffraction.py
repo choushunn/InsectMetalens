@@ -7,10 +7,12 @@
 import numpy as np
 from matplotlib import pyplot as plt
 
+from utils import show_contour
+
 
 class FresnelDiffraction:
     def __init__(self, wavelength: float, distance: float, phase_plane: np.ndarray, grid_size: float,
-                 num_samples: int = 2048,
+                 N_sampling: int = 2048,
                  **kwargs) -> None:
         """
         初始化Fresnel衍射的参数
@@ -27,9 +29,9 @@ class FresnelDiffraction:
         self.k = 2 * np.pi / wavelength
         self.phase_plane = phase_plane
         self.grid_size = grid_size
-        self.num_samples = num_samples
+        self.N_sampling = N_sampling
         # 采样点
-        self.sample_points = np.arange(self.num_samples)
+        self.sample_points = np.arange(self.N_sampling)
         # 相移
         self.phase_shift = None
         # 衍射场
@@ -46,18 +48,18 @@ class FresnelDiffraction:
         :return:变换后的数据
         """
 
-        a = np.exp(1j * 2 * np.pi / self.num_samples * (self.num_samples / 2 - 0.5) * self.sample_points)
+        a = np.exp(1j * 2 * np.pi / self.N_sampling * (self.N_sampling / 2 - 0.5) * self.sample_points)
         # 计算二维外积
         A = np.outer(a, a)
         # 计算调制因子
-        C = np.exp(-1j * 2 * np.pi / self.num_samples * (self.num_samples / 2 - 0.5) ** 2 * 2) * A
+        C = np.exp(-1j * 2 * np.pi / self.N_sampling * (self.N_sampling / 2 - 0.5) ** 2 * 2) * A
         trans_data = None
         if flag == 1:
             # 执行正变换
             trans_data = self.grid_size ** 2 * C * np.fft.fft2(A * input_data)
         if flag == -1:
             # 执行逆变换
-            trans_data = (1. / (self.num_samples * self.grid_size)) ** 2 * self.num_samples ** 2 * np.conj(
+            trans_data = (1. / (self.N_sampling * self.grid_size)) ** 2 * self.N_sampling ** 2 * np.conj(
                 C) * np.fft.ifft2(
                 np.conj(A) * input_data)
         return trans_data
@@ -70,8 +72,8 @@ class FresnelDiffraction:
         :return: 衍射传输后的场
         """
         # 计算频率
-        freq = 1. / (self.num_samples * self.grid_size) * (self.sample_points - self.num_samples / 2 + 0.5)
-        freq_x = np.outer(freq, np.ones(self.num_samples))
+        freq = 1. / (self.N_sampling * self.grid_size) * (self.sample_points - self.N_sampling / 2 + 0.5)
+        freq_x = np.outer(freq, np.ones(self.N_sampling))
         freq_y = freq_x.T
 
         # 计算频率因子
@@ -89,8 +91,8 @@ class FresnelDiffraction:
         Ex = self.fourier_transform_2d(SpectrumX, -1)
 
         # 选择感兴趣的区域
-        Ex = Ex[int(self.num_samples / 2 - self.nn):int(self.num_samples / 2 + 2 + self.nn),
-             int(self.num_samples / 2 - self.nn):int(self.num_samples / 2 + 2 + self.nn)]
+        Ex = Ex[int(self.N_sampling / 2 - self.nn):int(self.N_sampling / 2 + 2 + self.nn),
+             int(self.N_sampling / 2 - self.nn):int(self.N_sampling / 2 + 2 + self.nn)]
 
         return Ex
 
@@ -229,6 +231,41 @@ class FresnelDiffraction:
         plt.colorbar()  # 添加颜色条
         plt.title('Diffraction Field')
         plt.show()
+
+    def create_2d_plane(self, phase_values: np.ndarray):
+        """
+        创建相位数组在二维平面上的分布
+        :param phase_values: 相位值数组
+        :return: 形成的二维平面
+        """
+        # 使用采样点数量创建 X 和 Y 矩阵，X 和 Y 分别表示二维平面上的横纵坐标
+        X = self.Dx * np.ones((self.N_sampling, 1)) * (self.sample_points - self.N_sampling / 2 + 0.5)
+        Y = X.transpose()
+
+        # 计算每个采样点处的等效距离，即所属超表面结构单元中心位置到透镜中心的距离
+        equivalent_distance = np.sqrt(
+            np.ceil((np.abs(X) - 0.5 * self.sample_interval) / self.sample_interval) ** 2 + np.ceil(
+                (np.abs(Y) - 0.5 * self.sample_interval) / self.sample_interval) ** 2) * self.sample_interval
+
+        # 显示等效距离的等高线图
+        show_contour(equivalent_distance, 'Equivalent Distance')
+
+        # 计算基因索引数组，用于标识每个采样点所属的超表面结构单元
+        gene_index_array = np.floor(equivalent_distance / self.sample_interval) + 1
+
+        # 将超出指定环数的基因索引值限制为 num_rings
+        gene_index_array[gene_index_array > self.num_rings] = self.num_rings
+
+        # 显示基因索引数组的等高线图
+        show_contour(gene_index_array, 'Gene Index Array')
+
+        # 根据基因索引数组从相位值数组中获取相应的相位值
+        phase_array = phase_values[gene_index_array.astype(int) - 1]
+
+        # 显示相位数组的等高线图
+        show_contour(phase_array, 'Phase Array')
+
+        return phase_array
 
 
 if __name__ == '__main__':
