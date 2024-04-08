@@ -111,7 +111,7 @@ class MetalensOptimization:
         if self.method == "SGD":
             optimizer = SGD(learning_rate=0.01, max_iter=100000, tol=1e-4, verbose=True, metalens=self)
             optimizer.fit()
-            # return sgd.fit()
+
         elif self.method == "Adam":
             adam = Adam()
             # return adam.optimize()

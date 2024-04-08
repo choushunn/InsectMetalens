@@ -4,6 +4,8 @@
 # @Author     : Spring
 # @Time       : 2024/4/7 17:06
 # @Description:
+from typing import Set
+
 import numpy as np
 from matplotlib import pyplot as plt
 
@@ -11,34 +13,24 @@ from utils import show_contour
 
 
 class FresnelDiffraction:
-    def __init__(self, wavelength: float, distance: float, phase_plane: np.ndarray, grid_size: float,
-                 N_sampling: int = 2048,
-                 **kwargs) -> None:
+    def __init__(self, metalens) -> None:
         """
         初始化Fresnel衍射的参数
-        :param wavelength: 波长
-        :param distance: 衍射距离
-        :param phase_plane: 相位面
-        :param grid_size: 网格大小
-        :param num_samples: 采样点数
-        :param kwargs: 其他参数
         """
-        self.wavelength = wavelength
-        self.distance = distance
+        self.metalens = metalens
+        self.wavelength = self.metalens.wavelength_center
+        self.nn = 200
         # 波数
-        self.k = 2 * np.pi / wavelength
-        self.phase_plane = phase_plane
-        self.grid_size = grid_size
-        self.N_sampling = N_sampling
-        # 采样点
-        self.sample_points = np.arange(self.N_sampling)
+        self.k = 2 * np.pi / self.metalens.wavelength_center
         # 相移
         self.phase_shift = None
+        # 相位平面
+        self.phase_plane = None
         # 衍射场
         self.diffraction_field = None
         # 强度分布
         self.intensity_distribution = None
-        self.nn = 200
+        # 创建面阵/传播/计算参数/返回参数
 
     def fourier_transform_2d(self, input_data: np.ndarray, flag: int = 1) -> np.ndarray:
         """
@@ -48,18 +40,20 @@ class FresnelDiffraction:
         :return:变换后的数据
         """
 
-        a = np.exp(1j * 2 * np.pi / self.N_sampling * (self.N_sampling / 2 - 0.5) * self.sample_points)
+        a = np.exp(1j * 2 * np.pi / self.metalens.N_sampling * (
+                self.metalens.N_sampling / 2 - 0.5) * self.metalens.sample_points)
         # 计算二维外积
         A = np.outer(a, a)
         # 计算调制因子
-        C = np.exp(-1j * 2 * np.pi / self.N_sampling * (self.N_sampling / 2 - 0.5) ** 2 * 2) * A
+        C = np.exp(-1j * 2 * np.pi / self.metalens.N_sampling * (self.metalens.N_sampling / 2 - 0.5) ** 2 * 2) * A
         trans_data = None
         if flag == 1:
             # 执行正变换
-            trans_data = self.grid_size ** 2 * C * np.fft.fft2(A * input_data)
+            trans_data = self.metalens.Dx ** 2 * C * np.fft.fft2(A * input_data)
         if flag == -1:
             # 执行逆变换
-            trans_data = (1. / (self.N_sampling * self.grid_size)) ** 2 * self.N_sampling ** 2 * np.conj(
+            trans_data = (1. / (
+                    self.metalens.N_sampling * self.metalens.Dx)) ** 2 * self.metalens.N_sampling ** 2 * np.conj(
                 C) * np.fft.ifft2(
                 np.conj(A) * input_data)
         return trans_data
@@ -72,8 +66,9 @@ class FresnelDiffraction:
         :return: 衍射传输后的场
         """
         # 计算频率
-        freq = 1. / (self.N_sampling * self.grid_size) * (self.sample_points - self.N_sampling / 2 + 0.5)
-        freq_x = np.outer(freq, np.ones(self.N_sampling))
+        freq = 1. / (self.metalens.N_sampling * self.metalens.Dx) * (
+                self.metalens.sample_points - self.metalens.N_sampling / 2 + 0.5)
+        freq_x = np.outer(freq, np.ones(self.metalens.N_sampling))
         freq_y = freq_x.T
 
         # 计算频率因子
@@ -85,28 +80,28 @@ class FresnelDiffraction:
         SpectrumX = self.fourier_transform_2d(initial_field, 1)
 
         # 对频谱进行相位调制
-        SpectrumX = SpectrumX * np.exp(1j * 2 * np.pi * fz * self.distance)
+        SpectrumX = SpectrumX * np.exp(1j * 2 * np.pi * fz * self.metalens.focal_length)
 
         # 执行逆向傅里叶变换
         Ex = self.fourier_transform_2d(SpectrumX, -1)
 
         # 选择感兴趣的区域
-        Ex = Ex[int(self.N_sampling / 2 - self.nn):int(self.N_sampling / 2 + 2 + self.nn),
-             int(self.N_sampling / 2 - self.nn):int(self.N_sampling / 2 + 2 + self.nn)]
+        Ex = Ex[int(self.metalens.N_sampling / 2 - self.nn):int(self.metalens.N_sampling / 2 + 2 + self.nn),
+             int(self.metalens.N_sampling / 2 - self.nn):int(self.metalens.N_sampling / 2 + 2 + self.nn)]
 
         return Ex
 
-    def compute_diffraction_field(self):
+    def compute_diffraction_field(self, phase_plane: np.ndarray = None):
         """
         计算衍射场
         :return: 衍射场
         """
         # 计算相移
-        self.phase_shift = np.exp(1j * self.k * self.distance)
+        self.phase_shift = np.exp(1j * self.k * self.metalens.focal_length)
 
         # 初始化初始场
-        initial_amplitude = np.ones(self.phase_plane.shape) * 0.66
-        initial_field = initial_amplitude * np.exp(1j * self.phase_plane)
+        initial_amplitude = np.ones(phase_plane.shape) * 0.66
+        initial_field = initial_amplitude * np.exp(1j * phase_plane)
 
         # 计算衍射场
         self.diffraction_field = self.diffraction_2d_trans_polar(initial_field, 1)
@@ -194,11 +189,16 @@ class FresnelDiffraction:
             raise ValueError("请先计算强度分布")
         return np.sum(self.intensity_distribution)
 
-    def compute_all(self) -> dict:
+    def compute_all(self, phase) -> dict:
         """
         计算所有参数
         :return:所有评价参数
         """
+        # 使用输入的相位创建面阵
+        phase_plane = self.create_2d_plane(phase)
+        self.diffraction_2d_trans_polar(phase_plane)
+        self.compute_diffraction_field(phase_plane)
+        self.show_diffraction_field()
         return {
             "FWHM": self.compute_FWHM(),
             "SideLobeRatio": self.compute_SideLobeRatio(),
@@ -239,50 +239,30 @@ class FresnelDiffraction:
         :return: 形成的二维平面
         """
         # 使用采样点数量创建 X 和 Y 矩阵，X 和 Y 分别表示二维平面上的横纵坐标
-        X = self.Dx * np.ones((self.N_sampling, 1)) * (self.sample_points - self.N_sampling / 2 + 0.5)
+        X = self.metalens.Dx * np.ones((self.metalens.N_sampling, 1)) * (
+                self.metalens.sample_points - self.metalens.N_sampling / 2 + 0.5)
         Y = X.transpose()
 
         # 计算每个采样点处的等效距离，即所属超表面结构单元中心位置到透镜中心的距离
         equivalent_distance = np.sqrt(
-            np.ceil((np.abs(X) - 0.5 * self.sample_interval) / self.sample_interval) ** 2 + np.ceil(
-                (np.abs(Y) - 0.5 * self.sample_interval) / self.sample_interval) ** 2) * self.sample_interval
-
-        # 显示等效距离的等高线图
-        show_contour(equivalent_distance, 'Equivalent Distance')
+            np.ceil((np.abs(X) - 0.5 * self.metalens.sample_interval) / self.metalens.sample_interval) ** 2 + np.ceil(
+                (np.abs(
+                    Y) - 0.5 * self.metalens.sample_interval) / self.metalens.sample_interval) ** 2) * self.metalens.sample_interval
 
         # 计算基因索引数组，用于标识每个采样点所属的超表面结构单元
-        gene_index_array = np.floor(equivalent_distance / self.sample_interval) + 1
+        gene_index_array = np.floor(equivalent_distance / self.metalens.sample_interval) + 1
 
         # 将超出指定环数的基因索引值限制为 num_rings
-        gene_index_array[gene_index_array > self.num_rings] = self.num_rings
-
-        # 显示基因索引数组的等高线图
-        show_contour(gene_index_array, 'Gene Index Array')
+        gene_index_array[gene_index_array > self.metalens.Nr_outter] = self.metalens.Nr_outter
 
         # 根据基因索引数组从相位值数组中获取相应的相位值
-        phase_array = phase_values[gene_index_array.astype(int) - 1]
+        phase_plane = phase_values[gene_index_array.astype(int) - 1]
 
+        # if self.metalens.show:
+        # 显示等效距离的等高线图
+        show_contour(equivalent_distance, 'Equivalent Distance')
+        # 显示基因索引数组的等高线图
+        show_contour(gene_index_array, 'Gene Index Array')
         # 显示相位数组的等高线图
-        show_contour(phase_array, 'Phase Array')
-
-        return phase_array
-
-
-if __name__ == '__main__':
-    # 示例用法
-    wavelength = 0.6328e-6  # 波长（单位：米）
-    z = 1.0  # 衍射距离（单位：米）
-    grid_size = 512  # 网格大小
-    phase_plane = np.random.rand(grid_size, grid_size)  # 生成随机相位数组作为输入
-
-    # 创建 FresnelDiffraction 实例
-    fresnel_diffraction = FresnelDiffraction(wavelength=wavelength, z=z, phase_plane=phase_plane)
-
-    # 假设有一个相位面 phase_plane 和衍射距离 z
-    # 计算衍射场
-    fresnel_diffraction.compute_diffraction_field()
-
-    # 计算强度分布
-    fresnel_diffraction.compute_intensity_distribution()
-
-    print(fresnel_diffraction.compute_all())
+        show_contour(phase_plane, 'Phase Array')
+        return phase_plane

@@ -9,6 +9,8 @@
 import numpy as np
 from tqdm import tqdm
 
+from FresnelDiffraction import FresnelDiffraction
+
 
 class SGD:
     def __init__(self, learning_rate=0.05, max_iter=1000, tol=1e-4, verbose=False, metalens=None):
@@ -21,14 +23,18 @@ class SGD:
         self.phases = self.metalens.phases  # 初始化相位数组
         self.group_delay = self.metalens.group_delay  # 初始化群延迟数组
         self.target_group_delay = 60  # 初始化目标群延迟
+        self.asm = FresnelDiffraction(self.metalens)
 
     def fit(self):
-        p_bar = tqdm(total=self.max_iter)
-        for i in range(self.max_iter):
-            self.optimize_step()  # 执行一步优化
-            if self.verbose:
-                p_bar.update(1)
-                p_bar.set_description(f"第 {i + 1} 次迭代, loss: {self.calculate_loss()}")
+        self.asm.compute_all(self.phases[:, 0])
+        # pass
+
+    # p_bar = tqdm(total=self.max_iter)
+    # for i in range(self.max_iter):
+    #     self.optimize_step()  # 执行一步优化
+    #     if self.verbose:
+    #         p_bar.update(1)
+    #         p_bar.set_description(f"第 {i + 1} 次迭代, loss: {self.calculate_loss()}")
 
     def optimize_step(self):
         gradient = self.compute_gradient()  # 计算梯度
@@ -86,7 +92,7 @@ if __name__ == '__main__':
     optimizer = SGD(learning_rate=0.01, max_iter=100000, tol=1e-4, verbose=True)
 
     # 使用SGD进行优化
-    optimizer.fit(phases, group_delay, target_group_delay)
+    optimizer.fit()
 
     # 获取优化后的相位
     optimized_phases = optimizer.phases
