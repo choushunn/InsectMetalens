@@ -1,25 +1,27 @@
+"""
 # -*- coding:utf-8 -*-
 # @Project    : InsectMetalens
 # @FileName   : MetalensOptimization.py
 # @Author     : Spring
 # @Time       : 2024/4/8 1:24
 # @Description:
+"""
 import datetime
 import os
 
-import numpy as np
+import cupy as np
 
 import pandas as pd
-import yaml
-from matplotlib import pyplot as plt
 
-from Adam import Adam
+import yaml
+
+# from Adam import Adam
 from SGD import SGD
-from utils import show_contour, show_phases, show_group_delay, plot_delta_phi_vs_radius, random_small_phase
+from utils import show_phases, show_group_delay, random_small_phase
 
 
 class MetalensOptimization:
-    def __init__(self, opt: any = None, *args, **kwargs):
+    def __init__(self, opt: any = None):
         """
         step1.初始化器件参数
         """
@@ -36,28 +38,41 @@ class MetalensOptimization:
         self.lambda_list = [8, 9.3, 10.6, 11.3, 12]
         # 外径,单位为um
         self.outer_radius = 500.25
-        # 采样间隔，环带间隔
+        # 内径,单位为um
+        self.inner_radius = 0 * self.wavelength_center
+        # 采样间隔，环带间隔,P_metasurface的间隔
         self.sample_interval = 7.25
         # 采样点个数
-        self.N_sampling = 2048
+        self.n_sampling = 2048
+        # 计算不同传播面
+        self.nz = 60
+        # 内径
+        self.r_inner = 0 * self.wavelength_center
+        # Z轴范围
+        self.z_range = 30 * self.wavelength_center
+        # 显示区域范围
+        self.n_n = 200
+        # 波数
+        self.k = 2 * np.pi / self.wavelength_center
         # 加载固定参数
         self.load_yaml()
+
         # =================下面是计算参数=================
         # 焦距
         self.focal_length = 130 * self.wavelength_center
         # 采样点
-        self.sample_points = np.arange(self.N_sampling)
+        self.sample_points = np.arange(self.n_sampling)
         # 角频率
         self.angular_frequency = 2 * np.pi * self.wavelength_center / self.speed_of_light
         # 计算环带数量
-        self.Nr_outter = int(np.floor(self.outer_radius / self.sample_interval) + 1)
+        self.num_r_outer = int(np.floor(self.outer_radius / self.sample_interval) + 1)
         # 创建环带半径数组
-        self.radius_array = np.arange(0, (self.Nr_outter - 1) * self.sample_interval + self.sample_interval,
+        self.radius_array = np.arange(0, (self.num_r_outer - 1) * self.sample_interval + self.sample_interval,
                                       self.sample_interval).astype(np.float32)
         # 计算初始半径
-        self.R_0 = (self.Nr_outter - 1) * self.sample_interval
+        self.R_0 = (self.num_r_outer - 1) * self.sample_interval
         # 计算每个环带的采样间隔
-        self.Dx = 2 * self.outer_radius / self.N_sampling
+        self.Dx = 2 * self.outer_radius / self.n_sampling
         # =================初始化相位和群延迟=================
         # 初始相位
         self.phases = None
@@ -112,7 +127,8 @@ class MetalensOptimization:
             optimizer.fit()
 
         elif self.method == "Adam":
-            adam = Adam()
+            # adam = Adam()
+            pass
             # return adam.optimize()
         else:
             raise ValueError("Invalid optimization method. Please choose 'SGD' or 'Adam'.")
@@ -123,7 +139,7 @@ class MetalensOptimization:
         :return:
         """
         print("001.初始化器件参数..")
-        with open(self.data_file) as f:
+        with open(self.data_file, 'r', encoding='utf-8') as f:
             data = yaml.load(f, Loader=yaml.FullLoader)
         # 从 YAML 数据中提取参数并初始化类属性
         parameters = data.get('parameters', {})

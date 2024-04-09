@@ -5,7 +5,32 @@
 # @Time       : 2024/4/8 0:02
 # @Description:
 import matplotlib.pyplot as plt
-import numpy as np
+import cupy as np
+
+plt.rcParams['font.family'] = 'SimHei'
+
+import torch
+
+
+def check_gpu_memory_cpu_memory():
+    if torch.cuda.is_available():
+        device = torch.cuda.current_device()
+        gpu_name = torch.cuda.get_device_name(device)
+        gpu_memory = torch.cuda.get_device_properties(device).total_memory / 1024 ** 3
+        print(f"GPU: {gpu_name}, GPU Memory: {gpu_memory:.2f} GB")
+    else:
+        print("No GPU available.")
+
+    import psutil
+
+    cpu_count = psutil.cpu_count(logical=False)
+    cpu_percent = psutil.cpu_percent()
+    mem_info = psutil.virtual_memory()
+    mem_total = mem_info.total / 1024 ** 3
+    mem_used = mem_info.used / 1024 ** 3
+
+    print(f"CPU Cores: {cpu_count}, CPU Usage: {cpu_percent}%")
+    print(f"Memory: Total: {mem_total:.2f} GB, Used: {mem_used:.2f} GB")
 
 
 def show_contour(data, title):
@@ -15,6 +40,7 @@ def show_contour(data, title):
     :param title:
     :return:
     """
+    data = data.get()
     plt.contourf(data)
     plt.colorbar()
     plt.title(title)
@@ -87,3 +113,28 @@ def random_small_phase(shape):
     :return:
     """
     return np.random.uniform(-0.1 * np.pi, 0.1 * np.pi, shape)
+
+
+import time
+
+
+def calculate_runtime(func):
+    """
+    计算函数运行时间
+    :param func:
+    :return:
+    """
+
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        runtime = end_time - start_time
+        print(f"函数 {func.__name__} 的运行时长为 {runtime} 秒")
+        return result
+
+    return wrapper
+
+
+if __name__ == '__main__':
+    check_gpu_memory_cpu_memory()

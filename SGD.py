@@ -20,9 +20,7 @@ class SGD:
         self.verbose = verbose  # 是否打印迭代信息
         # 获取透镜参数
         self.metalens = metalens
-        self.phases = self.metalens.phases  # 初始化相位数组
-        self.group_delay = self.metalens.group_delay  # 初始化群延迟数组
-        self.target_group_delay = 60  # 初始化目标群延迟
+        self.phases = self.metalens.phases
         self.asm = FresnelDiffraction(self.metalens)
         self.target_params = None
 
@@ -66,10 +64,10 @@ class SGD:
         # 是当前的评价参数
         current_params = self.asm.compute_all(self.phases)
         print(current_params)
-        exit()
+        # exit()
         # todo:设计当前参数和目标参数的loss函数
         # return np.sum((current_params - self.target_params) ** 2)
-        # return 0.1
+        return 0.1
 
     def update_phases(self, gradient):
         self.phases -= self.learning_rate * gradient  # 根据梯度更新相位

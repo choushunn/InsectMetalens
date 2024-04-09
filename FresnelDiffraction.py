@@ -7,11 +7,11 @@
 from time import sleep
 from typing import Set
 
-import numpy as np
+import cupy as np
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 
-from utils import show_contour
+from utils import show_contour, calculate_runtime
 
 
 class FresnelDiffraction:
@@ -19,56 +19,8 @@ class FresnelDiffraction:
         """
         初始化Fresnel衍射的参数
         """
+        # 透镜参数
         self.metalens = metalens
-        self.wavelength = self.metalens.wavelength_center
-        # 显示区域范围
-        self.nn = 200
-        # 波数
-        self.k = 2 * np.pi / self.metalens.wavelength_center
-        # 相移
-        self.phase_shift = None
-        # 相位平面
-        self.phase_plane = None
-        # 衍射场
-        self.diffraction_field = None
-        # 强度分布
-        self.intensity_distribution = None
-        # 创建面阵/传播/返回参数
-
-    def create_2d_plane(self, phase_values: np.ndarray):
-        """
-        创建相位数组在二维平面上的分布
-        :param phase_values: 相位值数组
-        :return: 形成的二维平面
-        """
-        # 使用采样点数量创建 X 和 Y 矩阵，X 和 Y 分别表示二维平面上的横纵坐标
-        X = self.metalens.Dx * np.ones((self.metalens.N_sampling, 1)) * (
-                self.metalens.sample_points - self.metalens.N_sampling / 2 + 0.5)
-        Y = X.transpose()
-
-        # 计算每个采样点处的等效距离，即所属超表面结构单元中心位置到透镜中心的距离
-        equivalent_distance = np.sqrt(
-            np.ceil((np.abs(X) - 0.5 * self.metalens.sample_interval) / self.metalens.sample_interval) ** 2 + np.ceil(
-                (np.abs(
-                    Y) - 0.5 * self.metalens.sample_interval) / self.metalens.sample_interval) ** 2) * self.metalens.sample_interval
-
-        # 计算基因索引数组，用于标识每个采样点所属的超表面结构单元
-        gene_index_array = np.floor(equivalent_distance / self.metalens.sample_interval) + 1
-
-        # 将超出指定环数的基因索引值限制为 num_rings
-        gene_index_array[gene_index_array > self.metalens.Nr_outter] = self.metalens.Nr_outter
-
-        # 根据基因索引数组从相位值数组中获取相应的相位值
-        phase_plane = phase_values[gene_index_array.astype(int) - 1]
-
-        # if self.metalens.show:
-        # 显示等效距离的等高线图
-        show_contour(equivalent_distance, 'Equivalent Distance')
-        # 显示基因索引数组的等高线图
-        show_contour(gene_index_array, 'Gene Index Array')
-        # 显示相位数组的等高线图
-        show_contour(phase_plane, 'Phase Array')
-        return phase_plane
 
     def fourier_transform_2d(self, input_data: np.ndarray, flag: int = 1) -> np.ndarray:
         """
@@ -77,13 +29,13 @@ class FresnelDiffraction:
         :param flag:1为正变换，-1为逆变换
         :return:变换后的数据
         """
-
-        a = np.exp(1j * 2 * np.pi / self.metalens.N_sampling * (
-                self.metalens.N_sampling / 2 - 0.5) * self.metalens.sample_points)
+        n_sampling = self.metalens.n_sampling
+        a = np.exp(1j * 2 * np.pi / n_sampling * (
+                n_sampling / 2 - 0.5) * self.metalens.sample_points)
         # 计算二维外积
         A = np.outer(a, a)
         # 计算调制因子
-        C = np.exp(-1j * 2 * np.pi / self.metalens.N_sampling * (self.metalens.N_sampling / 2 - 0.5) ** 2 * 2) * A
+        C = np.exp(-1j * 2 * np.pi / n_sampling * (n_sampling / 2 - 0.5) ** 2 * 2) * A
         trans_data = None
         if flag == 1:
             # 执行正变换
@@ -91,217 +43,237 @@ class FresnelDiffraction:
         if flag == -1:
             # 执行逆变换
             trans_data = (1. / (
-                    self.metalens.N_sampling * self.metalens.Dx)) ** 2 * self.metalens.N_sampling ** 2 * np.conj(
+                    n_sampling * self.metalens.Dx)) ** 2 * n_sampling ** 2 * np.conj(
                 C) * np.fft.ifft2(
                 np.conj(A) * input_data)
         return trans_data
-
-    def diffraction_2d_trans_polar(self, initial_field, refractive_index: float = 1) -> np.ndarray:
-        """
-        二维极化衍射传输
-        :param initial_field: 初始场
-        :param refractive_index: 折射率，默认为1
-        :return: 衍射传输后的场
-        """
-        # 计算频率
-        freq = 1. / (self.metalens.N_sampling * self.metalens.Dx) * (
-                self.metalens.sample_points - self.metalens.N_sampling / 2 + 0.5)
-        freq_x = np.outer(freq, np.ones(self.metalens.N_sampling))
-        freq_y = freq_x.T
-
-        # 计算频率因子
-        fza = ((refractive_index / self.wavelength) ** 2 - freq_x ** 2 - freq_y ** 2).astype(np.complex128)
-        # 计算极化因子
-        fz = np.sqrt(fza)
-
-        # 执行正向傅里叶变换
-        SpectrumX = self.fourier_transform_2d(initial_field, 1)
-
-        # 对频谱进行相位调制
-        SpectrumX = SpectrumX * np.exp(1j * 2 * np.pi * fz * self.metalens.focal_length)
-
-        # 执行逆向傅里叶变换
-        Ex = self.fourier_transform_2d(SpectrumX, -1)
-        # plt.contourf(np.abs(Ex) ** 2)        #
-        # plt.colorbar()  # 添加颜色条
-        # plt.title('Diffraction Field1')
-        # plt.show()
-        # 选择感兴趣的显示区域
-        Ex = Ex[int(self.metalens.N_sampling / 2 - self.nn):int(self.metalens.N_sampling / 2 + 2 + self.nn),
-             int(self.metalens.N_sampling / 2 - self.nn):int(self.metalens.N_sampling / 2 + 2 + self.nn)]
-
-        return Ex
-
-    def compute_diffraction_field(self, phase_plane: np.ndarray = None):
-        """
-        计算衍射场
-        :return: 衍射场
-        """
-        # 计算相移
-        self.phase_shift = np.exp(1j * self.k * self.metalens.focal_length)
-
-        # 初始化初始场
-        initial_amplitude = np.ones(phase_plane.shape) * 0.66
-        initial_field = initial_amplitude * np.exp(1j * phase_plane)
-
-        # 计算衍射场
-        self.diffraction_field = self.diffraction_2d_trans_polar(initial_field, 1)
-        # nn=200时，衍射场为402*402
-
-    def compute_intensity_distribution(self):
-        """
-        计算菲涅尔衍射的强度分布
-        :return: 强度分布
-        """
-        if self.diffraction_field is None:
-            raise ValueError("请先计算衍射场")
-        self.intensity_distribution = np.abs(self.diffraction_field) ** 2
-        # 某一列
-        # print(self.intensity_distribution[:, self.nn].shape)
-        # print(self.intensity_distribution.shape)
-        # nn=200时，强度分布为402*402
 
     def compute_all(self, phases) -> dict:
         """
         计算所有参数
         :return:所有评价参数
         """
+        Nz = self.metalens.nz
+        if Nz > 0:
+            dZ = self.metalens.z_range / (2 * Nz)
+        else:
+            dZ = 0
+        Zd = self.metalens.focal_length + dZ * np.arange(-Nz, Nz + 1)
+
+        # 402 * 121, 121个传播面上
+        XX_Itotal_Ir_Iphi_IzDisplay = np.zeros((2 * self.metalens.n_n + 2, 2 * Nz + 1))
+        IPeak = np.zeros(2 * Nz + 1)
+        DOF = np.zeros(len(phases))
+        Intensity_sum = np.zeros(len(phases))
         # 5个波长一起计算
         for i, phase in enumerate(phases):
-            # 计算不同传播面
-            Nz = 60
             p_bar = tqdm(total=2 * Nz + 1)
-            for nnz in range(0, 2 * Nz + 2):
+            for nnz in range(0, 2 * Nz + 1):
                 p_bar.update(1)
-                p_bar.set_description(f"第{i + 1}/{len(phases)}个波长, 第{nnz}/{2 * Nz + 1}个传播面")
-                sleep(0.01)
+                p_bar.set_description(f"第{i + 1}/{len(phases)}个波长, 第{nnz + 1}/{2 * Nz + 1}个传播面")
                 # 执行衍射计算
-                # ...
+                Ex = self.Diffra2DAngularSpectrum_BerryPhase(self.metalens.lambda_list[i], phase, Zd[nnz])
+                Intensity = np.abs(Ex) ** 2
+                XX_Itotal_Ir_Iphi_IzDisplay[:, nnz] = Intensity[:, self.metalens.n_n]
+                IPeak[nnz] = np.max(np.max(XX_Itotal_Ir_Iphi_IzDisplay[:, nnz]))
+            print(XX_Itotal_Ir_Iphi_IzDisplay.shape)
+            print(IPeak.shape)
 
-            p_bar.close()
-            # self.phase_plane = self.create_2d_plane(phase)
-            # self.compute_diffraction_field(self.phase_plane)
-        return 0
-        # # 使用输入的相位创建面阵
-        # phase_plane = self.create_2d_plane(phases)
-        #
-        # # 执行衍射
-        # self.diffraction_2d_trans_polar(phase_plane)
-        # # 计算衍射场
-        # self.compute_diffraction_field(phase_plane)
-        # self.show_diffraction_field()
-        # # 计算强度分布
-        # self.compute_intensity_distribution()
-        # self.show_intensity_distribution()
-        # return {
-        #     "FWHM": self.compute_FWHM(),
-        #     "SideLobeRatio": self.compute_SideLobeRatio(),
-        #     "PeakIntensity": self.compute_PeakIntensity(),
-        #     "FocalOffset": self.compute_FocalOffset(),
-        #     "DOF": self.compute_DOF(),
-        #     "IntensitySum": self.compute_IntensitySum()
-        # }
+            # 1个波长的传播面计算结束
+            # ====================下面计算一个波长的评价参数====================
+            DOF[i] = self.fun_calculate_DOF(IPeak, Zd)
+            print(DOF)
+            Intensity_sum[i] = np.sum(IPeak[(2 * Nz + 1) // 3:2 * (2 * Nz + 1) // 3]) * 2 - np.sum(
+                IPeak)  # 取中间 DOF 区域的强度和
+            if Intensity_sum[i] < 0:
+                Intensity_sum[i] = np.sum(
+                    IPeak[(2 * Nz + 1) // 3:2 * (2 * Nz + 1) // 3])
+            IPeakmax = np.max(IPeak)
+            In = np.where(IPeak == IPeakmax)[0]  # 找到最大强度对应的位置平面,取最后一个 In 中的元素
+            Intensity_z = XX_Itotal_Ir_Iphi_IzDisplay[:, Nz]  # 设定焦平面
+            # print(Intensity_z)
+            n_sampling = self.metalens.n_sampling
+            XX = ((np.arange(n_sampling / 2 - self.metalens.n_n,
+                             n_sampling / 2 + 1 + self.metalens.n_n) - n_sampling / 2 + 0.5) * self.metalens.Dx)
+            FWHM_x, SideLobeRatio_x, IntensPeak_x = self.EfieldParameters(Intensity_z, XX, self.metalens.n_n)
+            IntensPeak_x = np.average(XX_Itotal_Ir_Iphi_IzDisplay[self.metalens.n_n, Nz - 2: Nz + 2])
 
-    def compute_PeakIntensity(self) -> float:
+    def calculate_ex_ey(self, phase, DT=0):
         """
-        计算峰值强度
-        :return: 峰值强度
+        计算Ex、Ey
+        :param phase:
+        :param DT:
+        :return:
         """
-        # todo: 计算峰值强度
-        return np.max(self.intensity_distribution)
+        P_metasurface = self.metalens.sample_interval
+        n_sampling = self.metalens.n_sampling
+        # 使用采样点数量创建 X 和 Y 矩阵，X 和 Y 分别表示二维平面上的横纵坐标
+        X = self.metalens.Dx * np.ones((n_sampling, 1)) * (
+                self.metalens.sample_points - n_sampling / 2 + 0.5)
+        Y = X.transpose()
 
-    def compute_FWHM(self) -> float:
+        # 计算每个采样点处的等效距离，即所属超表面结构单元中心位置到透镜中心的距离
+        Rij = np.sqrt(
+            np.ceil((np.abs(X) - 0.5 * P_metasurface) / P_metasurface) ** 2 + np.ceil(
+                (np.abs(
+                    Y) - 0.5 * P_metasurface) / P_metasurface) ** 2) * P_metasurface
+        GeneN_ij = np.floor(Rij / P_metasurface) + 1
+        GeneN_ij[GeneN_ij > self.metalens.num_r_outer] = self.metalens.num_r_outer
+
+        # 给出每个采样点所属超表面单元的相位
+        Phase_ijUnit1 = phase[GeneN_ij.astype(int) - 1]  # Gene(1:Nring)为相位；
+        AmpProfile_ij1 = np.ones((n_sampling, n_sampling)) * 0.66
+        AmpProfile_ij1[Rij >= self.metalens.outer_radius] = 0
+        Phase_ijUnit1[Rij >= self.metalens.outer_radius] = 0
+        Phase_ijUnit1[Rij < self.metalens.outer_radius] = 0
+
+        ####扩充器件边缘的非结构区域#######################
+        Phase_ijUnit = np.zeros((n_sampling + DT, n_sampling + DT))
+        AmpProfile_ij = np.zeros((n_sampling + DT, n_sampling + DT))
+        Phase_ijUnit[DT // 2:n_sampling + DT // 2,
+        DT // 2:n_sampling + DT // 2] = Phase_ijUnit1[0:n_sampling,
+                                        0:n_sampling]
+        AmpProfile_ij[DT // 2:n_sampling + DT // 2,
+        DT // 2:n_sampling + DT // 2] = AmpProfile_ij1[0:n_sampling,
+                                        0:n_sampling]
+        # --计算器件出射场-------------------------------
+        Ex0 = AmpProfile_ij * np.exp(1j * Phase_ijUnit)
+
+        Ey0 = np.zeros((n_sampling + DT, n_sampling + DT))
+        return Ex0, Ey0
+
+    def Diffra2DAngularSpectrum_BerryPhase(self, wavelength, phase, Z):
         """
-        计算半高全宽（Full Width at Half Maximum）
-        :return: 半高全宽
+
+        :param wavelength:当前需要计算的波长
+        :param phase: 当前需要计算的相位
+        :param Z: 当前需要计算的传播面
+        :return:
         """
-        # todo: 完善计算表达式
-        max_intensity = np.max(self.intensity_distribution)
-        half_max_intensity = max_intensity / 2.0
+        Ex0, Ey0 = self.calculate_ex_ey(phase)
+        Ex = self.Diffraction2DTransPolar(Ex0, Ey0, Z, wavelength)
+        return Ex
 
-        # 找到超过半高全宽的点
-        indices_above_half_max = np.where(self.intensity_distribution >= half_max_intensity)[0]
+    def Diffraction2DTransPolar(self, Ex0, Ey0, Z, wavelength):
+        """
 
-        # 获取第一个和最后一个超过半高全宽的点
-        first_index = indices_above_half_max[0]
-        last_index = indices_above_half_max[-1]
+        :param Ex0:
+        :param Ey0:
+        :param Z:
+        :param wavelength:
+        :return:
+        """
+        n_sampling = self.metalens.n_sampling
+        # 计算频率
+        refractive_index = 1
+        freq = 1. / (n_sampling * self.metalens.Dx) * (
+                self.metalens.sample_points - n_sampling / 2 + 0.5)
+        freq_x = np.outer(freq, np.ones(n_sampling))
+        freq_y = freq_x.T
 
-        # 计算半高全宽
-        FWHM = last_index - first_index
+        # 计算频率因子
+        fza = ((refractive_index / wavelength) ** 2 - freq_x ** 2 - freq_y ** 2).astype(np.complex128)
+        # 计算极化因子
+        fz = np.sqrt(fza)
 
+        # 执行正向傅里叶变换
+        SpectrumX = self.fourier_transform_2d(Ex0, 1)
+
+        # 对频谱进行相位调制
+        SpectrumX = SpectrumX * np.exp(1j * 2 * np.pi * fz * Z)
+
+        # 执行逆向傅里叶变换
+        Ex = self.fourier_transform_2d(SpectrumX, -1)
+
+        # 选择感兴趣的显示区域
+        Ex = Ex[int(n_sampling / 2 - self.metalens.n_n):int(
+            n_sampling / 2 + 2 + self.metalens.n_n),
+             int(n_sampling / 2 - self.metalens.n_n):int(
+                 n_sampling / 2 + 2 + self.metalens.n_n)]
+        Ey = 0.1 * Ex
+        return Ex
+
+    def fun_calculate_DOF(self, IPeak, Zd):
+        X_Center = self.metalens.nz
+        x = Zd / self.metalens.wavelength_center
+        nX = IPeak.size
+        IntensX = IPeak
+        Imax = IntensX[X_Center]
+        Xfwhm1 = 0
+        Xfwhm2 = 0
+        flag = 0
+        for i in range(X_Center, 0, -1):
+            if IntensX[i] < 0.5 * Imax:
+                if flag == 0:
+                    x1 = x[i + 1]
+                    I1 = IntensX[i + 1]
+                    x2 = x[i]
+                    I2 = IntensX[i]
+                    b = (I2 - I1) / (x2 - x1)
+                    c = I2 - b * x2
+                    Xfwhm1 = (0.5 * Imax - c) / b
+                    flag = 1
+
+        flag = 0
+        for i in range(X_Center, nX - 1, 1):
+            if IntensX[i] < 0.5 * Imax:
+                if flag == 0:
+                    x1 = x[i - 1]
+                    I1 = IntensX[i - 1]
+                    x2 = x[i]
+                    I2 = IntensX[i]
+                    b = (I2 - I1) / (x2 - x1)
+                    c = I2 - b * x2
+                    Xfwhm2 = (0.5 * Imax - c) / b
+                    flag = 1
+
+        FWHM = Xfwhm2 - Xfwhm1
         return FWHM
 
-    def compute_SideLobeRatio(self) -> float:
-        """
-        计算旁瓣比
-        :return: 旁瓣比
-        """
-        # todo: 完善计算表达式
-        # 找到峰值强度
-        peak_intensity = np.max(self.intensity_distribution)
-        intensity_distribution = self.intensity_distribution.copy()
-        # 将峰值强度之外的部分置零
-        intensity_distribution[intensity_distribution < peak_intensity] = 0
-        # 找到第二大的值（即第一个旁瓣）
-        second_max_intensity = np.sort(intensity_distribution.flatten())[-2]
-        # 计算旁瓣比
-        SideLobeRatio = peak_intensity / second_max_intensity
-        return SideLobeRatio
+    def EfieldParameters(self, Intensity_z, XX, nn):
+        X = XX
+        IntensX = Intensity_z
+        X_Center = nn
+        nX = IntensX.size
+        Imax = IntensX[X_Center]
+        Xfwhm1 = 0
+        Xfwhm2 = 0
+        flag = 0
 
-    def compute_FocalOffset(self) -> int:
-        """
-        计算焦移
-        :return: 焦移
-        """
-        # todo: 完善计算表达式
-        if self.intensity_distribution is None:
-            raise ValueError("请先计算强度分布")
-        # 找到峰值强度所在的索引
-        peak_index = np.argmax(self.intensity_distribution)
-        # 计算焦移
-        return peak_index - self.intensity_distribution.shape[0] // 2
+        for i in range(X_Center, 0, -1):
+            if IntensX[i] < 0.5 * Imax:
+                if flag == 0:
+                    x1 = X[i + 1]
+                    I1 = IntensX[i + 1]
+                    x2 = X[i]
+                    I2 = IntensX[i]
+                    b = (I2 - I1) / (x2 - x1)
+                    c = I2 - b * x2
+                    Xfwhm1 = (0.5 * Imax - c) / b
+                    flag = 1
 
-    def compute_DOF(self) -> float:
-        """
-        计算焦深
-        :return: 焦深
-        """
-        # todo: 完善计算表达式
-        # 找到半高全宽
-        FWHM = self.compute_FWHM()
-        # 计算焦深
-        return 0.443 * self.wavelength / (FWHM ** 2)
+        flag = 0
+        for i in range(X_Center, nX - 1, 1):
+            if IntensX[i] < 0.5 * Imax:
+                if flag == 0:
+                    x1 = X[i - 1]
+                    I1 = IntensX[i - 1]
+                    x2 = X[i]
+                    I2 = IntensX[i]
+                    b = (I2 - I1) / (x2 - x1)
+                    c = I2 - b * x2
+                    Xfwhm2 = (0.5 * Imax - c) / b
+                    flag = 1
 
-    def compute_IntensitySum(self) -> float:
-        """
-        计算能量求和
-        :return: 能量求和
-        """
-        # todo: 完善计算表达式
-        if self.intensity_distribution is None:
-            raise ValueError("请先计算强度分布")
-        return np.sum(self.intensity_distribution)
+        FWHM = Xfwhm2 - Xfwhm1
+        flag = 0
+        SideLobe = 0
 
-    def show_intensity_distribution(self):
-        """
-        绘制强度分布
-        """
-        if self.intensity_distribution is None:
-            raise ValueError("请先计算强度分布")
+        for j in range(X_Center, nX - 1):
+            if (IntensX[j] <= IntensX[j - 1] and IntensX[j] <= IntensX[j + 1] and j < nX - 1):
+                if (flag == 0):
+                    sideIn = np.max(IntensX[j:nX])
+                    SideLobe = sideIn / Imax
+                    flag = 1
 
-        # 可视化强度分布
-        plt.imshow(self.intensity_distribution)
-        plt.title('Intensity Distribution')
-        plt.show()
-
-    def show_diffraction_field(self):
-        """
-        绘制衍射场
-        """
-        if self.diffraction_field is None:
-            raise ValueError("请先计算衍射场")
-        # 可视化衍射场
-        plt.contourf(np.abs(self.diffraction_field) ** 2)
-        plt.colorbar()  # 添加颜色条
-        plt.title('Diffraction Field')
-        plt.show()
+        return FWHM, SideLobe, Imax
