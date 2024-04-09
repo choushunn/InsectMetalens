@@ -5,6 +5,7 @@
 # @Time       : 2024/4/8 0:02
 # @Description:
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 def show_contour(data, title):
@@ -56,7 +57,7 @@ def show_phases(radius_array, phases, lambda_list):
     :return:
     """
     for i, wavelength in enumerate(lambda_list):
-        plt.plot(radius_array, phases[:, i], label=f'lambda = {wavelength}')
+        plt.plot(radius_array, phases[i, :], label=f'lambda = {wavelength}')
     plt.xlabel('Radius (um)')
     plt.ylabel('Phase (rad)')
     plt.title('Phase vs Radius')
@@ -77,3 +78,12 @@ def plot_delta_phi_vs_radius(radius_array, delta_phi_values):
     plt.title('Delta Phi vs Radius')
     plt.legend()
     plt.show()
+
+
+def random_small_phase(shape):
+    """
+    产生一个范围在[-0.1pi,0.1pi]的随机数
+    :param shape:
+    :return:
+    """
+    return np.random.uniform(-0.1 * np.pi, 0.1 * np.pi, shape)

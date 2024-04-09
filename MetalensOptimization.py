@@ -11,11 +11,11 @@ import numpy as np
 
 import pandas as pd
 import yaml
+from matplotlib import pyplot as plt
 
 from Adam import Adam
-from FresnelDiffraction import FresnelDiffraction
 from SGD import SGD
-from utils import show_contour, show_phases, show_group_delay, plot_delta_phi_vs_radius
+from utils import show_contour, show_phases, show_group_delay, plot_delta_phi_vs_radius, random_small_phase
 
 
 class MetalensOptimization:
@@ -28,13 +28,13 @@ class MetalensOptimization:
         self.device = opt.device
         self.show = opt.show
 
-        # 光速,单位为m/s
+        # 光速,单位为 3e8 m/s, 0.3e9m/s
         self.speed_of_light = 0.3
-        # 中心波长,单位为微米
+        # 中心波长,单位为um,1e-6m, 10.6e-6um
         self.wavelength_center = 10.6
         # 波长列表
         self.lambda_list = [8, 9.3, 10.6, 11.3, 12]
-        # 外径
+        # 外径,单位为um
         self.outer_radius = 500.25
         # 采样间隔，环带间隔
         self.sample_interval = 7.25
@@ -59,48 +59,47 @@ class MetalensOptimization:
         # 计算每个环带的采样间隔
         self.Dx = 2 * self.outer_radius / self.N_sampling
         # =================初始化相位和群延迟=================
-        # 初始相位变量
-        self.phases = np.zeros((self.Nr_outter, len(self.lambda_list)), dtype=np.float32)
+        # 初始相位
+        self.phases = None
         # 初始群延迟
-        self.group_delay = (np.sqrt(self.R_0 ** 2 + self.focal_length ** 2) - np.sqrt(
-            self.radius_array ** 2 + self.focal_length ** 2)) / self.speed_of_light
-        self.delta_phi_values = None
+        self.group_delay = None
         # 执行初始化
         self.init_phases()
 
     def init_phases(self):
         """
-        step2.初始化不同波长的相位
+        step2.初始化不同波长的相位,依据中心波长产生一个基准相位，其他4个波长的相位通过附加相位来计算
         :return:
         """
         print("002.初始化不同波长的相位..")
-        for wavelength in self.lambda_list:
-            # 计算每个环带的相位延迟
-            phase = 2 * np.pi * (np.sqrt(self.R_0 ** 2 + self.focal_length ** 2) - np.sqrt(
-                self.radius_array ** 2 + self.focal_length ** 2)) / wavelength
-            self.phases[:, self.lambda_list.index(wavelength)] = phase
+        # 使用中心波长生成基准相位
+        base_phase = 2 * np.pi * (np.sqrt(self.R_0 ** 2 + self.focal_length ** 2) - np.sqrt(
+            self.radius_array ** 2 + self.focal_length ** 2)) / self.wavelength_center
+        # 给基准相位附加一个微小的扰动相位,范围为[-pi,pi]
+        base_phase += random_small_phase(base_phase.shape)
+        # 计算不同相位
+        phase_shifts = [2, 1, 0, -1, -2]
+        self.phases = np.array(
+            [base_phase + shift + random_small_phase(base_phase.shape) for shift in phase_shifts])
+
+        # delta_phi 的范围为 [-2pi, 2pi]
+        # 使用gd来约束 delta_phi
+
         if self.show:
             # 可视化
             show_phases(self.radius_array, self.phases, self.lambda_list)
+            self.calculate_group_delay()
             show_group_delay(self.radius_array, self.group_delay)
 
     def calculate_group_delay(self):
         """
         计算群延迟
         """
+        # 计算第1个和第5个的相位差
+        delta_phi = np.abs(self.phases[0, :] - self.phases[4, :])
         delta_omega = 2 * np.pi * self.speed_of_light * (1 / 8.0 - 1 / 12.0)
-        delta_phi_0 = np.abs(self.phases[:, 0] - self.phases[:, 4])
-        # 计算群延迟，要求0 < gd < 60
-        self.group_delay = delta_phi_0 / delta_omega
-
-        delta_phi_1 = np.abs(self.phases[:, 0] - self.phases[:, 2])
-        delta_phi_2 = np.abs(self.phases[:, 1] - self.phases[:, 2])
-        delta_phi_4 = np.abs(self.phases[:, 3] - self.phases[:, 2])
-        delta_phi_5 = np.abs(self.phases[:, 4] - self.phases[:, 2])
-        self.delta_phi_values = [delta_phi_0, delta_phi_1, delta_phi_2, delta_phi_4, delta_phi_5]
-        if self.show:
-            # 可视化
-            plot_delta_phi_vs_radius(self.radius_array, self.delta_phi_values)
+        # 群延迟 gd 的范围为 [0, 60]fs，1s=1e15fs
+        self.group_delay = delta_phi / delta_omega
 
     def phase_optimization(self):
         """
