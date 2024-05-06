@@ -4,10 +4,9 @@ parameters:
   wavelength_center: 10.6
   outer_radius: 600.25
   sample_interval: 7.25
-  N_sampling: 2048
-  lambda_list: [ 8, 9.3, 10.6, 11.3, 12 ]
+  n_sampling: 4096
+  lambda_list: [ 8, 9.3, 10.6, 11.3, 12]
 
-# 优化的目标参数
 target_parameters:
   TargetFWHM: 1.5
   TargetSideLobeRatio: 0.05
@@ -15,4 +14,3 @@ target_parameters:
   TargetFocalOffset: 0.00001
   TargetDOF: 0.0
   TargetIntensitySum: 0.0
-

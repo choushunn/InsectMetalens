@@ -10,7 +10,7 @@ import datetime
 import os
 
 import cupy as np
-
+# import numpy as np
 import pandas as pd
 
 import yaml
@@ -40,7 +40,7 @@ class MetalensOptimization:
         self.outer_radius = 500.25
         # 内径,单位为um
         self.inner_radius = 0 * self.wavelength_center
-        # 采样间隔，环带间隔,P_metasurface的间隔
+        # 采样间隔，环带间隔, P_metasurface的间隔
         self.sample_interval = 7.25
         # 采样点个数
         self.n_sampling = 2048
@@ -51,7 +51,7 @@ class MetalensOptimization:
         # Z轴范围
         self.z_range = 30 * self.wavelength_center
         # 显示区域范围
-        self.n_n = 200
+        self.n_n = 100  # 设置 200 面阵大小
         # 波数
         self.k = 2 * np.pi / self.wavelength_center
         # 加载固定参数
@@ -93,7 +93,7 @@ class MetalensOptimization:
         # 给基准相位附加一个微小的扰动相位,范围为[-pi,pi]
         base_phase += random_small_phase(base_phase.shape)
         # 计算不同相位
-        phase_shifts = [2, 1, 0, -1, -2]
+        phase_shifts = [2, 1, 0, -1, -2]  # 5个rad，结构能够提供的相位范围
         self.phases = np.array(
             [base_phase + shift + random_small_phase(base_phase.shape) for shift in phase_shifts])
 
@@ -102,9 +102,9 @@ class MetalensOptimization:
 
         if self.show:
             # 可视化
-            show_phases(self.radius_array, self.phases, self.lambda_list)
+            show_phases(self.radius_array.get(), self.phases.get(), self.lambda_list)
             self.calculate_group_delay()
-            show_group_delay(self.radius_array, self.group_delay)
+            show_group_delay(self.radius_array.get(), self.group_delay.get())
 
     def calculate_group_delay(self):
         """
@@ -125,11 +125,12 @@ class MetalensOptimization:
         if self.method == "SGD":
             optimizer = SGD(learning_rate=0.01, max_iter=100000, tol=1e-4, verbose=True, metalens=self)
             optimizer.fit()
-
         elif self.method == "Adam":
             # adam = Adam()
             pass
             # return adam.optimize()
+        elif self.method == "PSO":
+            pass
         else:
             raise ValueError("Invalid optimization method. Please choose 'SGD' or 'Adam'.")
 
@@ -158,7 +159,7 @@ class MetalensOptimization:
         try:
             print("004.保存优化结果...")
             # 保存数据
-            df = pd.DataFrame(self.phases)
+            df = pd.DataFrame(self.phases.get())
             # 创建保存结果的文件夹路径
             result_folder = 'result/' + datetime.datetime.now().strftime('%Y%m%d')
 

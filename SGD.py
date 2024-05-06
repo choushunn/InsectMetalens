@@ -4,16 +4,18 @@
 # @Author     : Spring
 # @Time       : 2024/4/2 15:38
 # @Description:
-
-
-import numpy as np
+import torch
+# import numpy as np
 from tqdm import tqdm
-
+import cupy as np
 from FresnelDiffraction import FresnelDiffraction
+
+# 随机数种子
+np.random.seed(2024)
 
 
 class SGD:
-    def __init__(self, learning_rate=0.05, max_iter=1000, tol=1e-4, verbose=False, metalens=None):
+    def __init__(self, learning_rate=0.05, max_iter=1000, tol=1e-6, verbose=False, metalens=None):
         self.learning_rate = learning_rate  # 学习率
         self.max_iter = max_iter  # 最大迭代次数
         self.tol = tol  # 收敛阈值
@@ -22,52 +24,137 @@ class SGD:
         self.metalens = metalens
         self.phases = self.metalens.phases
         self.asm = FresnelDiffraction(self.metalens)
-        self.target_params = None
+        self.target_params = {
+            "TargetFWHM": 1.5,
+            "TargetSideLobeRatio": 0.05,
+            "TargetPeakIntensity": 2000,
+            "TargetFocalOffset": 0.00001
+        }
+        self.total_loss = 0
 
     def fit(self):
+        iteration = 0
+        gradient_norm = np.inf
+        params = self.phases
+        prev_loss = np.inf  # 用于判断收敛性的前一次损失值
+        tol = self.tol
         p_bar = tqdm(total=self.max_iter)
-        for i in range(self.max_iter):
-            self.optimize_step()  # 执行一步优化
-            if self.verbose:
-                p_bar.update(1)
-                p_bar.set_description(f"第 {i + 1} 次迭代, loss: {self.calculate_loss()}")
+        while iteration < self.max_iter:
+            # 随机选择样本
+            indices = np.random.choice(len(params), size=len(params), replace=False)
 
-    def optimize_step(self):
-        gradient = self.compute_gradient()  # 计算梯度
-        # print(gradient[:, 0])
-        self.update_phases(gradient)  # 更新相位
+            # 计算梯度
+            gradient = self.compute_gradient(params, indices)
 
-    def compute_gradient(self):
-        # 使用有限差分法计算梯度
-        grad = np.zeros_like(self.phases)
-        # print(len(self.phases), len(self.phases[0]))
-        # 修改每个波长的相位，计算梯度
-        for i in range(len(self.phases)):
-            for j in range(len(self.phases[i])):
-                original_phase = self.phases[i, j]
-                # Compute the gradient using finite differences
-                epsilon = 1e-8
-                self.phases[i, j] = original_phase + epsilon
-                loss_plus = self.calculate_loss()
+            # 更新参数
+            params -= self.learning_rate * gradient
 
-                self.phases[i, j] = original_phase - epsilon
-                loss_minus = self.calculate_loss()
+            # 计算损失函数
+            loss = self.loss_function(params)
 
-                grad[i, j] = (loss_plus - loss_minus) / (2 * epsilon)
+            # 判断收敛性,loss越小越好
+            if abs(loss - prev_loss) < tol:
+                break
 
-                # Restore the original phase
-                self.phases[i, j] = original_phase
+            prev_loss = loss
 
-        return grad
+            p_bar.set_description(f"第 {iteration + 1} 次迭代, loss: {self.total_loss}")
+            p_bar.update(1)
+            iteration += 1
 
-    def calculate_loss(self):
-        # 是当前的评价参数
-        current_params = self.asm.compute_all(self.phases)
-        print(current_params)
-        # exit()
-        # todo:设计当前参数和目标参数的loss函数
-        # return np.sum((current_params - self.target_params) ** 2)
-        return 0.1
+    def compute_gradient(self, params, indices):
+        """
+        计算梯度
+        :param params:
+        :param indices:
+        :return:
+        """
+        # 生成[0,pi]的随机数
+        epsilon = 1e-3 * np.random.uniform(0, np.pi)  # 微小扰动的大小
+        gradient = np.zeros_like(params)  # 初始化梯度为零向量
+        # 计算每个相位的梯度
+        for i in indices:
+            # 对第i个参数进行微小扰动
+            params_plus = params.copy()
+            params_plus[i] += epsilon
 
-    def update_phases(self, gradient):
-        self.phases -= self.learning_rate * gradient  # 根据梯度更新相位
+            # 计算扰动后的损失函数值
+            loss_plus = self.loss_function(params_plus)
+
+            # 对第i个参数进行微小扰动
+            params_minus = params.copy()
+            params_minus[i] -= epsilon
+
+            # 计算扰动后的损失函数值
+            loss_minus = self.loss_function(params_minus)
+
+            # 计算第i个参数的梯度
+            gradient[i] = (loss_plus - loss_minus) / (2 * epsilon)
+
+        return gradient
+
+    def loss_function(self, phases):
+        """
+        计算损失函数
+        :param phases:
+        :return:
+        """
+        # 当前的评价参数
+        current_params = self.asm.compute_all(phases)
+
+        # 计算差异
+        diff_fwhm = np.max(current_params["FWHM"]) - self.target_params["TargetFWHM"]
+        diff_sidelobe_ratio = np.max(current_params["side_lobe_ratio"]) - self.target_params["TargetSideLobeRatio"]
+        diff_peak_intensity = np.min(current_params["intensity_peak"]) - self.target_params["TargetPeakIntensity"]
+        diff_focal_offset = np.max(current_params["focal_offset"]) - self.target_params["TargetFocalOffset"]
+        # 计算焦深偏差越小越好
+        DOF_loss = np.std(current_params["DOF"])
+        intensity_sum_loss = 10 ** 4 / np.min(current_params["intensity_sum"])  # max min()
+        # 计算损失函数
+        fwhm_loss = diff_fwhm ** 2
+        sidelobe_ratio_loss = diff_sidelobe_ratio ** 2
+        peak_intensity_loss = diff_peak_intensity ** 2
+        focal_offset_loss = diff_focal_offset ** 2
+        # 损失权重
+        d = [10, 0.1, 10, 2, 0.01, 1]
+        total_loss = d[0] * fwhm_loss + d[1] * sidelobe_ratio_loss + d[2] * peak_intensity_loss + d[3] * focal_offset_loss + d[
+            4] * DOF_loss + d[
+                         5] * intensity_sum_loss
+        self.total_loss = total_loss
+
+        return total_loss
+
+    def save_results(self, code=0):
+        """
+        保存结果
+        :param code:
+        :return:
+        """
+        # 一次优化后，保存当前的参数
+        # TODO: 保存参数
+
+    def update_learning_rate(self, loss, learning_rate=0.01, decay_factor=0.1, min_learning_rate=1e-6, patience=0, epoch=0,
+                             best_loss=float('inf')):
+        """
+        更新学习率
+        :param loss:
+        :param learning_rate:
+        :param decay_factor:
+        :param min_learning_rate:
+        :param patience:
+        :param epoch:
+        :param best_loss:
+        :return:
+        """
+        if loss < best_loss:
+            best_loss = loss
+            patience = 0
+        else:
+            patience += 1
+            decay_patience = 10  # 衰减耐心的阈值
+            if patience > decay_patience:
+                learning_rate *= decay_factor
+                learning_rate = max(learning_rate, min_learning_rate)
+                patience = 0
+
+        return learning_rate, patience, best_loss

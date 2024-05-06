@@ -7,6 +7,7 @@
 import matplotlib.pyplot as plt
 import cupy as np
 
+# import numpy as np
 plt.rcParams['font.family'] = 'SimHei'
 
 import torch
@@ -66,6 +67,7 @@ def show_group_delay(radius_array, group_delay):
     :param group_delay:
     :return:
     """
+    print(radius_array.shape, group_delay.shape)
     plt.plot(radius_array, group_delay)
     plt.xlabel('Radius (um)')
     plt.ylabel('Group Delay (fs)')
@@ -82,6 +84,7 @@ def show_phases(radius_array, phases, lambda_list):
     :param lambda_list:
     :return:
     """
+    print(len(lambda_list))
     for i, wavelength in enumerate(lambda_list):
         plt.plot(radius_array, phases[i, :], label=f'lambda = {wavelength}')
     plt.xlabel('Radius (um)')
