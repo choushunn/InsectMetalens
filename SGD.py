@@ -4,6 +4,10 @@
 # @Author     : Spring
 # @Time       : 2024/4/2 15:38
 # @Description:
+import os
+from datetime import datetime
+
+import pandas as pd
 import torch
 # import numpy as np
 from tqdm import tqdm
@@ -31,6 +35,8 @@ class SGD:
             "TargetFocalOffset": 0.00001
         }
         self.total_loss = 0
+        self.file_name = datetime.now().strftime("result/data_%Y%m%d_%H%M%S.csv")
+        self.file_exists = os.path.exists(self.file_name)
 
     def fit(self):
         iteration = 0
@@ -50,8 +56,8 @@ class SGD:
             params -= self.learning_rate * gradient
 
             # 计算损失函数
-            loss = self.loss_function(params)
-
+            cur_params, loss = self.loss_function(params)
+            self.save_results(cur_params)
             # 判断收敛性,loss越小越好
             if abs(loss - prev_loss) < tol:
                 break
@@ -79,14 +85,14 @@ class SGD:
             params_plus[i] += epsilon
 
             # 计算扰动后的损失函数值
-            loss_plus = self.loss_function(params_plus)
+            _, loss_plus = self.loss_function(params_plus)
 
             # 对第i个参数进行微小扰动
             params_minus = params.copy()
             params_minus[i] -= epsilon
 
             # 计算扰动后的损失函数值
-            loss_minus = self.loss_function(params_minus)
+            _, loss_minus = self.loss_function(params_minus)
 
             # 计算第i个参数的梯度
             gradient[i] = (loss_plus - loss_minus) / (2 * epsilon)
@@ -122,16 +128,23 @@ class SGD:
                          5] * intensity_sum_loss
         self.total_loss = total_loss
 
-        return total_loss
+        return current_params, total_loss
 
-    def save_results(self, code=0):
+    def save_results(self, cur_params, code=0):
         """
         保存结果
+        :param cur_params:保存的参数
         :param code:
         :return:
         """
         # 一次优化后，保存当前的参数
-        # TODO: 保存参数
+        df = pd.DataFrame({key: np.asnumpy(value) for key, value in cur_params.items()})
+        if not self.file_exists:
+            df.to_csv(self.file_name, mode='w', header=True, index=False)
+            self.file_exists = True
+        else:
+            df.to_csv(self.file_name, mode='a', header=False, index=False)
+        # print(f"数据已追加保存到 {self.file_name}")
 
     def update_learning_rate(self, loss, learning_rate=0.01, decay_factor=0.1, min_learning_rate=1e-6, patience=0, epoch=0,
                              best_loss=float('inf')):

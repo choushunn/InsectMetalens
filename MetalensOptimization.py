@@ -18,6 +18,7 @@ import yaml
 # from Adam import Adam
 from SGD import SGD
 from utils import show_phases, show_group_delay, random_small_phase
+# from tensorboardX import SummaryWriter
 
 
 class MetalensOptimization:
@@ -80,6 +81,8 @@ class MetalensOptimization:
         self.group_delay = None
         # 执行初始化
         self.init_phases()
+
+        # self.writer = SummaryWriter("logs")
 
     def init_phases(self):
         """
@@ -181,3 +184,6 @@ class MetalensOptimization:
         :return:
         """
         print(vars(self))
+
+    # def __del__(self):
+        # self.writer.close()
