@@ -58,9 +58,9 @@ class SGD:
             # 计算损失函数
             cur_params, loss = self.loss_function(params)
             self.save_results(cur_params)
-            # 判断收敛性,loss越小越好
-            if abs(loss - prev_loss) < tol:
-                break
+            # # 判断收敛性,loss越小越好
+            # if abs(loss - prev_loss) < tol:
+            #     break
 
             prev_loss = loss
 
